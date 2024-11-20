@@ -1,7 +1,0 @@
-# Define the file path to save the model
-model_save_path = "emergency_event_predictor.pth"
-
-# Save the model's state dictionary
-torch.save(model.state_dict(), model_save_path)
-
-print(f"Model saved to {model_save_path}")
