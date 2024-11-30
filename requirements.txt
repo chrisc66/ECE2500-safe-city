@@ -4,6 +4,7 @@ geopandas
 matplotlib
 node2vec
 numpy
+pandarallel
 pandas
 scikit-learn
 scipy
