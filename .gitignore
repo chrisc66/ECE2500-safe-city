@@ -3,6 +3,7 @@ dataset/
 *.csv
 *.pth
 *.png
+*.pt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

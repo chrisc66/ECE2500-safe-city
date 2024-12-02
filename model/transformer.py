@@ -1,5 +1,6 @@
 import logging
 import math
+import os
 import time
 import torch
 import torch.nn as nn
@@ -15,7 +16,7 @@ class PositionalEncoding(nn.Module):
     Positional Encoding Module
     """
 
-    def __init__(self, embed_dim, max_len=7):  # 7 days in a week
+    def __init__(self, embed_dim, max_len=1):
         super(PositionalEncoding, self).__init__()
         self.logger = logging.getLogger(__name__)
         position = torch.arange(0, max_len).unsqueeze(1)
@@ -26,12 +27,14 @@ class PositionalEncoding(nn.Module):
         self.pe = pe.unsqueeze(0)
 
     def forward(self, x):
+        self.logger.info(f"PositionalEncoding forward x {x.shape}")
+        self.logger.info(f"PositionalEncoding forward pe {self.pe.shape}")
         x = x + self.pe[:, : x.size(1), :].to(x.device)
         return x
 
 
 class ST_TEM(nn.Module):
-    def __init__(self, embedding_module, embed_dim, num_heads, num_layers, max_len=7):
+    def __init__(self, embedding_module, embed_dim, num_heads, num_layers, max_len=1):
         super(ST_TEM, self).__init__()
         self.logger = logging.getLogger(__name__)
 
@@ -171,7 +174,7 @@ class ST_TEM(nn.Module):
 
         return all_predictions, all_targets
 
-    def plot_result(self, predictions, targets):
+    def plot_result(self, predictions, targets, figure_path):
         # Figure 1: predicted weekly events in neighbourhood heat map
         fig1 = plt.figure(figsize=(12, 100))
         predictions_np = predictions.reshape(-1, 1)  # shape (377, 1)
@@ -187,7 +190,7 @@ class ST_TEM(nn.Module):
         plt.title("Predicted Number of Events per Day for Each Neighborhood")
         plt.xlabel("Day of the Week")
         plt.ylabel("Neighborhood")
-        fig1.savefig("figure_1.png", dpi=fig1.dpi)
+        fig1.savefig(os.path.join(figure_path, "1-heat-map.png", dpi=fig1.dpi))
 
         # Figure 2
         fig2 = plt.figure(figsize=(8, 8))
@@ -197,7 +200,7 @@ class ST_TEM(nn.Module):
         plt.xlabel("True Event Counts")
         plt.ylabel("Predicted Event Counts")
         plt.grid()
-        fig2.savefig("figure_2.png", dpi=fig2.dpi)
+        fig2.savefig(os.path.join(figure_path, "2-predicted-vs-target.png", dpi=fig1.dpi))
 
         # Figure 3
         fig3 = plt.figure(figsize=(30, 5))
@@ -211,6 +214,6 @@ class ST_TEM(nn.Module):
         plt.xticks(x, [f"Item {i}" for i in range(len(predictions))])  # Label x-axis ticks
         plt.legend()
         plt.tight_layout()
-        fig3.savefig("figure_3.png", dpi=fig3.dpi)
+        fig3.savefig(os.path.join(figure_path, "3-side-by-side.png", dpi=fig1.dpi))
 
         return
