@@ -1,4 +1,6 @@
+import logging
 import math
+import time
 import torch
 import torch.nn as nn
 import numpy as np
@@ -13,14 +15,13 @@ class PositionalEncoding(nn.Module):
     Positional Encoding Module
     """
 
-    def __init__(self, logger, embed_dim, max_len=7):  # 7 days in a week
+    def __init__(self, embed_dim, max_len=7):  # 7 days in a week
         super(PositionalEncoding, self).__init__()
+        self.logger = logging.getLogger(__name__)
         position = torch.arange(0, max_len).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, embed_dim, 2) * -(math.log(10000.0) / embed_dim))
         pe = torch.zeros(max_len, embed_dim)
-        logger.info(f"sin position {position.shape}, div_term {div_term.shape}, pe {pe.shape}")
         pe[:, 0::2] = torch.sin(position * div_term)
-        logger.info(f"cos position {position.shape}, div_term {div_term.shape}, pe {pe.shape}")
         pe[:, 1::2] = torch.cos(position * div_term)
         self.pe = pe.unsqueeze(0)
 
@@ -30,13 +31,13 @@ class PositionalEncoding(nn.Module):
 
 
 class ST_TEM(nn.Module):
-    def __init__(self, logger, embedding_module, embed_dim, num_heads, num_layers, max_len=7):
+    def __init__(self, embedding_module, embed_dim, num_heads, num_layers, max_len=7):
         super(ST_TEM, self).__init__()
-        self.logger = logger
+        self.logger = logging.getLogger(__name__)
 
         # Embedding module (CombinedEmbedding) and positional encoding
         self.embedding_module = embedding_module
-        self.positional_encoding = PositionalEncoding(logger=logger, embed_dim=embed_dim, max_len=max_len)
+        self.positional_encoding = PositionalEncoding(embed_dim=embed_dim, max_len=max_len)
 
         # Transformer Encoder
         encoder_layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, dim_feedforward=512, dropout=0.1)
@@ -79,6 +80,9 @@ class ST_TEM(nn.Module):
         return predictions
 
     def train_model(self, optimizer, criterion, num_epochs, dataloader, save_model):
+        self.logger.info(f"Start training transformer model")
+        start = time.time()
+
         for epoch in range(num_epochs):
             self.train()
             epoch_loss = 0
@@ -122,9 +126,14 @@ class ST_TEM(nn.Module):
             torch.save(self.state_dict(), "transformer_model_weekly.pth")
             self.logger.info("Model saved successfully.")
 
+        end = time.time()
+        self.logger.info(f"Finish training transformer model, time elapsed {(end-start):.2f}s")
         return
 
     def validate_model(self, dataloader):
+        self.logger.info(f"Start evaluating transformer model")
+        start = time.time()
+
         self.eval()  # Set model to evaluation mode
         all_predictions = []
         all_targets = []
@@ -156,6 +165,9 @@ class ST_TEM(nn.Module):
         self.logger.info(f"Validation Results: MAE: {mae:.4f}, MSE: {mse:.4f}, RMSE: {rmse:.4f}, R² Score: {r2:.4f}")
         self.logger.info(f"Target shape {all_targets.shape}, Prediction shape {all_predictions.shape}")
         self.logger.info(f"Last predictions {_predictions}")
+
+        end = time.time()
+        self.logger.info(f"Finish training transformer model, time elapsed {(end-start):.2f}s")
 
         return all_predictions, all_targets
 

@@ -1,8 +1,9 @@
 import os
 import sys
 import logging
+import time
 
-logger = logging.getLogger("ST-TEM")
+logger = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logging.getLogger("matplotlib").setLevel(logging.ERROR)
 logging.getLogger("gensim").setLevel(logging.ERROR)
@@ -25,10 +26,14 @@ WEEKLY_EVENTS_FILTER_PATH = os.path.join(DATASET_PATH, "weekly_events_filter.csv
 NEIGHBOURHOOD_PATH = os.path.join(DATASET_PATH, "City_of_Edmonton_-_Neighbourhoods_20241022.csv")
 NEIGHBOURHOOD_FEATURES_PATH = os.path.join(DATASET_PATH, "neighbourhood_features.csv")
 
+logger.info(f"Start loading dataset")
+start = time.time()
 unit_trip_df = pd.read_csv(UNIT_TRIP_PATH)
 weekly_events_df = pd.read_csv(WEEKLY_EVENTS_FILTER_PATH)
 neighbourhood_df = pd.read_csv(NEIGHBOURHOOD_PATH)
 neighbourhood_feature_df = pd.read_csv(NEIGHBOURHOOD_FEATURES_PATH)
+end = time.time()
+logger.info(f"Finish loading dataset, time elapsed {(end-start):.2f}s")
 
 #################################################
 # Define Parameters for Features and Embeddings
@@ -79,6 +84,9 @@ assert spatial_dimension == batch_size * mini_batch_size
 #################################################
 # Create Features and Targets
 #################################################
+
+logger.info(f"Start creating features and targets")
+start = time.time()
 
 # Neighborhood Features
 neighborhood_ids = torch.arange(num_neighborhoods)
@@ -151,16 +159,16 @@ for i, neighbourhood in enumerate(neighbourhood_feature_df["Neighbourhood_Number
         targets[i] = event_count  # Aggregated for the entire week
 logger.info(f"targets shape {targets.shape}")
 
+end = time.time()
+logger.info(f"Finish creating features and targets, time elapsed {(end-start):.2f}s")
+
 #################################################
 # Transformer Model and Hyperparameters
 #################################################
 
 # Embedding Layer
 embedding_module = CombinedEmbedding(
-    logger=logger,
-    node2vec_emb_layer=generate_node2vec_embeddings(
-        logger=logger, neighbourhood_info_df=neighbourhood_df, node2vec_dim=node2vec_dim
-    ),
+    node2vec_emb_layer=generate_node2vec_embeddings(neighbourhood_info_df=neighbourhood_df, node2vec_dim=node2vec_dim),
     time2vec_embed_dim=time2vec_embed_dim,
     time_feature_dim=time_feature_dim,
     num_building_types=num_building_types,
@@ -174,6 +182,7 @@ embedding_module = CombinedEmbedding(
 )
 
 # Splitting dataset
+# TODO: Split using time instead of num_neighbourhood
 train_indices, val_indices = train_test_split(np.arange(num_neighborhoods), test_size=0.2, random_state=42)
 
 train_neighborhood_ids = neighborhood_ids[train_indices]
@@ -196,7 +205,6 @@ val_targets = targets[val_indices]
 
 # Dataset and DataLoader
 val_dataset = NeighborhoodDataset(
-    logger=logger,
     neighborhood_ids=val_neighborhood_ids,
     time_features=val_time_features,
     building_type_ids=val_building_type_ids,
@@ -207,7 +215,6 @@ val_dataset = NeighborhoodDataset(
     targets=val_targets,
 )
 train_dataset = NeighborhoodDataset(
-    logger=logger,
     neighborhood_ids=train_neighborhood_ids,
     time_features=train_time_features,
     building_type_ids=train_building_type_ids,
@@ -222,7 +229,7 @@ val_dataloader = DataLoader(val_dataset, batch_size=16, shuffle=False)
 train_dataloader = DataLoader(train_dataset, batch_size=16, shuffle=False)
 
 # Transformer Model
-transformer = ST_TEM(logger=logger, embedding_module=embedding_module, embed_dim=64, num_heads=4, num_layers=2)
+transformer = ST_TEM(embedding_module=embedding_module, embed_dim=64, num_heads=4, num_layers=2)
 optimizer = torch.optim.Adam(transformer.parameters(), lr=0.001)
 criterion = nn.PoissonNLLLoss()
 num_epochs = 500

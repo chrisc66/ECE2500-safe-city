@@ -1,3 +1,4 @@
+import logging
 import torch
 import torch.nn as nn
 import numpy as np
@@ -8,12 +9,13 @@ from torch.utils.data import Dataset
 from node2vec import Node2Vec
 
 
-def generate_node2vec_embeddings(logger, neighbourhood_info_df, node2vec_dim=32):
+def generate_node2vec_embeddings(neighbourhood_info_df, node2vec_dim=32):
     """
     Generates Node2Vec embeddings for neighborhoods based on a sample adjacency graph.
     node2vec_dim: Dimension of the embeddings to be generated.
     """
 
+    logger = logging.getLogger(__name__)
     num_neighborhood_info = len(neighbourhood_info_df)
     G = nx.Graph()
 
@@ -48,9 +50,9 @@ class Time2Vec(nn.Module):
     This captures both linear and periodic components for time-based features.
     """
 
-    def __init__(self, logger, input_dim, embed_dim, act_function=torch.sin):
+    def __init__(self, input_dim, embed_dim, act_function=torch.sin):
         super(Time2Vec, self).__init__()
-        self.logger = logger
+        self.logger = logging.getLogger(__name__)
         self.embed_dim = embed_dim // input_dim  # Embedding dimension per time feature
         self.act_function = act_function  # Activation function for periodicity
         self.weight = nn.Parameter(torch.randn(input_dim, self.embed_dim))
@@ -68,7 +70,6 @@ class Time2Vec(nn.Module):
 class NeighborhoodDataset(Dataset):
     def __init__(
         self,
-        logger,
         neighborhood_ids,
         time_features,
         building_type_ids,
@@ -78,7 +79,7 @@ class NeighborhoodDataset(Dataset):
         equipment_ids,
         targets,
     ):
-        self.logger = logger
+        self.logger = logging.getLogger(__name__)
         self.neighborhood_ids = neighborhood_ids  # Tensor of input neighborhood_ids
         self.time_features = time_features  # Tensor of input time_features
         self.building_type_ids = building_type_ids  # Tensor of input building_type_ids
@@ -114,7 +115,6 @@ class CombinedEmbedding(nn.Module):
 
     def __init__(
         self,
-        logger,
         node2vec_emb_layer,
         time2vec_embed_dim,
         time_feature_dim,
@@ -129,9 +129,9 @@ class CombinedEmbedding(nn.Module):
     ):  # Add target_embed_dim for projection
         super(CombinedEmbedding, self).__init__()
 
-        self.logger = logger
+        self.logger = logging.getLogger(__name__)
         self.node2vec_emb_layer = node2vec_emb_layer  # Precomputed Node2Vec embeddings
-        self.time2vec = Time2Vec(logger=logger, input_dim=time_feature_dim, embed_dim=time2vec_embed_dim)
+        self.time2vec = Time2Vec(input_dim=time_feature_dim, embed_dim=time2vec_embed_dim)
         self.building_type_embedding = nn.Embedding(num_building_types, building_type_embed_dim)
         self.population_embedding = nn.Linear(1, population_embed_dim)
         # self.income_embedding = nn.Linear(1, income_embed_dim)

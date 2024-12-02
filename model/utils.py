@@ -1,3 +1,4 @@
+import logging
 from shapely.geometry import Point
 
 
@@ -12,6 +13,9 @@ def find_neighbourhood(latitude, longitude, neighbourhood_info_df):
     Returns:
       The Neighbourhood Number, or None if not found.
     """
+
+    logger = logging.getLogger(__name__)
+
     point = Point(longitude, latitude)
     for _, row in neighbourhood_info_df.iterrows():
         multipolygon = row["MultiPolygon_obj"]
