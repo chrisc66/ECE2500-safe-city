@@ -213,6 +213,18 @@ else:
     torch.save(targets, TARGETS_TENSOR)
 logger.info(f"targets shape {targets.shape}")
 
+for feature_name, feature_tensor in [
+    ("neighborhood_ids", neighborhood_ids),
+    ("time_features", time_features),
+    ("building_type_ids", building_type_ids),
+    ("building_counts", building_counts),
+    ("population", population),
+    ("event_type_ids", event_type_ids),
+    ("equipment_ids", equipment_ids),
+]:
+    if torch.isnan(feature_tensor).any():
+        logger.error(f"NaN detected in {feature_name}")
+
 end = time.time()
 logger.info(f"Finish creating features and targets, time elapsed {(end-start):.2f}s")
 
@@ -282,23 +294,6 @@ train_dataset = NeighborhoodDataset(
 
 val_dataloader = DataLoader(val_dataset, batch_size=mini_batch_size, shuffle=False)
 train_dataloader = DataLoader(train_dataset, batch_size=mini_batch_size, shuffle=False)
-
-for batch in train_dataloader:
-    print("Input batch:", batch)
-    break
-
-logger.debug("Checking for NaNs in input features...")
-for feature_name, feature_tensor in [
-    ("neighborhood_ids", neighborhood_ids),
-    ("time_features", time_features),
-    ("building_type_ids", building_type_ids),
-    ("building_counts", building_counts),
-    ("population", population),
-    ("event_type_ids", event_type_ids),
-    ("equipment_ids", equipment_ids),
-]:
-    if torch.isnan(feature_tensor).any():
-        logger.error(f"NaN detected in {feature_name}")
 
 # Transformer Model
 transformer = ST_TEM(embedding_module=embedding_module, embed_dim=64, num_heads=4, num_layers=2)

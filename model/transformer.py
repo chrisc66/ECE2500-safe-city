@@ -8,9 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch.nn.init as init
-
-
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 
 class PositionalEncoding(nn.Module):
@@ -49,17 +47,6 @@ class ST_TEM(nn.Module):
         # Prediction head
         self.fc_out = nn.Linear(in_features=embed_dim, out_features=1)  # Output: predicting the number of events
 
-    def initialize_weights(self):
-        """
-        Initialize the weights of the model.
-        """
-        for name, param in self.named_parameters():
-            if "weight" in name and param.dim() > 1:
-                init.xavier_uniform_(param)
-            elif "bias" in name:
-                init.zeros_(param)
-        self.logger.info("Weights initialized using Xavier uniform.")
-    
     def forward(
         self,
         neighborhood_ids,
@@ -87,39 +74,49 @@ class ST_TEM(nn.Module):
         # Pass through transformer encoder
         x = self.transformer_encoder(x)
 
-        self.logger.info(f"Shape of x {x.shape}")
-
         predictions = self.fc_out(x.squeeze(0)).squeeze(-1)  # Shape: [batch_size]
-        self.logger.info(f"Prediction of x {predictions.shape}")
-        
+
         # Apply ReLU to ensure non-negative predictions
         self.logger.debug(f"Model predictions before activation: {predictions}")
-        
+
         # predictions = torch.relu(predictions)
         # self.logger.debug(f"Model predictions after activation: {predictions}")
-        
+
         self.logger.debug(f"Predictions from forward pass: {predictions}")
         if torch.isnan(predictions).any():
             self.logger.error("NaN values detected in model predictions.")
 
         return predictions
-    
-    import time  # Add this at the top of the file
 
     def train_model(self, dataloader, optimizer, criterion, num_epochs, save_model, logger=None):
         start = time.time()  # Record the start time
-        
+
         for epoch in range(num_epochs):
             self.train()
             epoch_loss = 0
 
-            for i, (_neighborhood_ids, _time_features, _building_type_ids, _building_counts,
-                    _population, _event_type_ids, _equipment_ids, _targets) in enumerate(dataloader):
+            for i, (
+                _neighborhood_ids,
+                _time_features,
+                _building_type_ids,
+                _building_counts,
+                _population,
+                _event_type_ids,
+                _equipment_ids,
+                _targets,
+            ) in enumerate(dataloader):
                 optimizer.zero_grad()
 
                 # Forward pass
-                predictions = self(_neighborhood_ids, _time_features, _building_type_ids,
-                                    _building_counts, _population, _event_type_ids, _equipment_ids)
+                predictions = self(
+                    _neighborhood_ids,
+                    _time_features,
+                    _building_type_ids,
+                    _building_counts,
+                    _population,
+                    _event_type_ids,
+                    _equipment_ids,
+                )
 
                 # Align targets with predictions
                 if _targets.dim() == 3:  # If _targets has an extra dimension
@@ -142,9 +139,6 @@ class ST_TEM(nn.Module):
                 torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
                 optimizer.step()
 
-                # Accumulate loss
-                #epoch_loss += loss.item()
-
                 mini_batch_loss = loss.item()
                 epoch_loss += mini_batch_loss
 
@@ -158,16 +152,14 @@ class ST_TEM(nn.Module):
                     f"Epoch [{epoch+1}/{num_epochs}] completed, Average Loss: {(epoch_loss / len(dataloader)):.4f}"
                 )
             else:
-                self.logger.info(
+                self.logger.debug(
                     f"Epoch [{epoch+1}/{num_epochs}] completed, Average Loss: {(epoch_loss / len(dataloader)):.4f}"
                 )
 
-        self.logger.info(f"Training loop finished")    
-        
         if save_model:
             torch.save(self.state_dict(), "transformer_model_weekly.pth")
             self.logger.info("Model saved successfully.")
-            
+
         end = time.time()  # Record the end time
         self.logger.info(f"Finish training transformer model, time elapsed {(end - start):.2f}s")
 
@@ -188,10 +180,27 @@ class ST_TEM(nn.Module):
         with torch.no_grad():
             for batch in dataloader:
                 # Extract features and targets from batch
-                _neighborhood_ids, _time_features, _building_type_ids, _building_counts, _population, _event_type_ids, _equipment_ids, _targets = batch
+                (
+                    _neighborhood_ids,
+                    _time_features,
+                    _building_type_ids,
+                    _building_counts,
+                    _population,
+                    _event_type_ids,
+                    _equipment_ids,
+                    _targets,
+                ) = batch
 
                 # Forward pass
-                predictions = self(_neighborhood_ids, _time_features, _building_type_ids, _building_counts, _population, _event_type_ids, _equipment_ids)
+                predictions = self(
+                    _neighborhood_ids,
+                    _time_features,
+                    _building_type_ids,
+                    _building_counts,
+                    _population,
+                    _event_type_ids,
+                    _equipment_ids,
+                )
 
                 # Collect predictions and targets
                 all_predictions.append(predictions.cpu())
@@ -211,7 +220,7 @@ class ST_TEM(nn.Module):
         self.logger.info(f"MAE: {mae}, MSE: {mse}")
 
         return all_predictions_np, all_targets_np
-    
+
     def initialize_weights(self):
         for module in self.modules():
             if isinstance(module, nn.Linear):
@@ -223,24 +232,26 @@ class ST_TEM(nn.Module):
             elif isinstance(module, nn.LayerNorm):
                 nn.init.constant_(module.bias, 0)
                 nn.init.constant_(module.weight, 1.0)
-                
+
     def plot_result(self, predictions, targets, figure_path):
-        # # Figure 1: predicted weekly events in neighbourhood heat map
-        # fig1 = plt.figure(figsize=(12, 100))
-        # predictions_np = predictions.reshape(-1, 1)  # shape (377, 1)
-        # sns.heatmap(
-        #     predictions_np,
-        #     annot=True,
-        #     cmap="coolwarm",
-        #     cbar=True,
-        #     fmt=".2f",
-        #     xticklabels=[f"Week {i+1}" for i in range(predictions_np.shape[1])],
-        #     yticklabels=[f"Neighborhood {i+1}" for i in range(predictions_np.shape[0])],
-        # )
-        # plt.title("Predicted Number of Events per Day for Each Neighborhood")
-        # plt.xlabel("Day of the Week")
-        # plt.ylabel("Neighborhood")
-        # fig1.savefig(os.path.join(figure_path, "1-heat-map.png", dpi=fig1.dpi))
+        start = time.time()
+
+        # Figure 1: predicted weekly events in neighbourhood heat map
+        fig1 = plt.figure(figsize=(12, 100))
+        predictions_np = predictions.reshape(-1, 1)  # shape (377, 1)
+        sns.heatmap(
+            predictions_np,
+            annot=True,
+            cmap="coolwarm",
+            cbar=True,
+            fmt=".2f",
+            xticklabels=[f"Week {i+1}" for i in range(predictions_np.shape[1])],
+            yticklabels=[f"Neighborhood {i+1}" for i in range(predictions_np.shape[0])],
+        )
+        plt.title("Predicted Number of Events per Day for Each Neighborhood")
+        plt.xlabel("Day of the Week")
+        plt.ylabel("Neighborhood")
+        fig1.savefig(os.path.join(figure_path, "1-heat-map.png"), dpi=fig1.dpi)
 
         # # Figure 2
         # fig2 = plt.figure(figsize=(8, 8))
@@ -250,9 +261,9 @@ class ST_TEM(nn.Module):
         # plt.xlabel("True Event Counts")
         # plt.ylabel("Predicted Event Counts")
         # plt.grid()
-        # fig2.savefig(os.path.join(figure_path, "2-predicted-vs-target.png", dpi=fig1.dpi))
+        # fig2.savefig(os.path.join(figure_path, "2-predicted-vs-target.png"), dpi=fig1.dpi)
 
-        # Figure 3
+        # # Figure 3
         # fig3 = plt.figure(figsize=(30, 5))
         # x = np.arange(len(predictions))  # Positions for the first list
         # width = 0.4  # Width of the bars
@@ -264,17 +275,18 @@ class ST_TEM(nn.Module):
         # plt.xticks(x, [f"Item {i}" for i in range(len(predictions))])  # Label x-axis ticks
         # plt.legend()
         # plt.tight_layout()
-        # fig3.savefig(os.path.join(figure_path, "3-side-by-side.png", dpi=fig1.dpi))
-        
+        # fig3.savefig(os.path.join(figure_path, "3-side-by-side.png"), dpi=fig1.dpi)
+
         # Figure 4 - Aggregate Predictions Across Neighborhoods
         # Aggregate across neighborhoods
         aggregated_predictions = predictions.mean(axis=1)  # Shape: [125]
-        aggregated_targets = targets.mean(axis=1)          # Shape: [125]
+        aggregated_targets = targets.mean(axis=1)  # Shape: [125]
 
         # Generate x-axis values
         x = np.arange(aggregated_predictions.shape[0])  # Shape: [125]
 
         # Plot
+        fig4 = plt.figure(figsize=(10, 10))
         width = 0.35
         plt.bar(x - width / 2, aggregated_predictions, width=width, label="Predictions", color="skyblue")
         plt.bar(x + width / 2, aggregated_targets, width=width, label="Targets", color="orange")
@@ -282,19 +294,19 @@ class ST_TEM(nn.Module):
         plt.ylabel("Number of Events")
         plt.title("Predicted vs Actual Events (Aggregated Across Neighborhoods)")
         plt.legend()
-        plt.show()
+        fig4.savefig(os.path.join(figure_path, "4-overall-predicted-vs-actual.png"), dpi=fig4.dpi)
 
-        
         # Figure 5 - Plot Predictions for Individual Neighborhoods
         # Select a specific neighborhood (e.g., the first one)
         neighborhood_idx = 0
         single_neighborhood_predictions = predictions[:, neighborhood_idx]  # Shape: [125]
-        single_neighborhood_targets = targets[:, neighborhood_idx]          # Shape: [125]
+        single_neighborhood_targets = targets[:, neighborhood_idx]  # Shape: [125]
 
         # Generate x-axis values
         x = np.arange(single_neighborhood_predictions.shape[0])  # Shape: [125]
 
         # Plot
+        fig5 = plt.figure(figsize=(10, 10))
         width = 0.35
         plt.bar(x - width / 2, single_neighborhood_predictions, width=width, label="Predictions", color="skyblue")
         plt.bar(x + width / 2, single_neighborhood_targets, width=width, label="Targets", color="orange")
@@ -302,13 +314,14 @@ class ST_TEM(nn.Module):
         plt.ylabel("Number of Events")
         plt.title(f"Predicted vs Actual Events for Neighborhood {neighborhood_idx}")
         plt.legend()
-        plt.show()
+        fig5.savefig(os.path.join(figure_path, "5-neighbourhood-predicted-vs-actual.png"), dpi=fig5.dpi)
 
         # Figure 6 - Plot Multiple Neighborhoods Using Subplots
         # Number of neighborhoods to plot
         num_neighborhoods_to_plot = 5
 
         # Create subplots
+        fig6 = plt.figure(figsize=(20, 20))
         fig, axes = plt.subplots(num_neighborhoods_to_plot, 1, figsize=(10, num_neighborhoods_to_plot * 3), sharex=True)
 
         for i in range(num_neighborhoods_to_plot):
@@ -324,8 +337,9 @@ class ST_TEM(nn.Module):
 
         axes[-1].set_xlabel("Time Steps")
         plt.tight_layout()
-        plt.show()
+        fig6.savefig(os.path.join(figure_path, "6-neighbourhood-events.png"), dpi=fig6.dpi)
 
+        end = time.time()
+        self.logger.info(f"Finish plotting prediction result, time elapsed {(end - start):.2f}s")
 
         return
-    
