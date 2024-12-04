@@ -7,6 +7,8 @@ import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import torch.nn.init as init
+
 
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
@@ -47,6 +49,17 @@ class ST_TEM(nn.Module):
         # Prediction head
         self.fc_out = nn.Linear(in_features=embed_dim, out_features=1)  # Output: predicting the number of events
 
+    def initialize_weights(self):
+        """
+        Initialize the weights of the model.
+        """
+        for name, param in self.named_parameters():
+            if "weight" in name and param.dim() > 1:
+                init.xavier_uniform_(param)
+            elif "bias" in name:
+                init.zeros_(param)
+        self.logger.info("Weights initialized using Xavier uniform.")
+    
     def forward(
         self,
         neighborhood_ids,
@@ -74,49 +87,63 @@ class ST_TEM(nn.Module):
         # Pass through transformer encoder
         x = self.transformer_encoder(x)
 
-        # Prediction layer (we apply it to each element in the sequence)
-        # Albert: predictions = self.fc_out(x).squeeze(-1)  # Shape: [batch_size]
         self.logger.info(f"Shape of x {x.shape}")
 
         predictions = self.fc_out(x.squeeze(0)).squeeze(-1)  # Shape: [batch_size]
         self.logger.info(f"Prediction of x {predictions.shape}")
         
+        # Apply ReLU to ensure non-negative predictions
+        self.logger.debug(f"Model predictions before activation: {predictions}")
+        
+        # predictions = torch.relu(predictions)
+        # self.logger.debug(f"Model predictions after activation: {predictions}")
+        
+        self.logger.debug(f"Predictions from forward pass: {predictions}")
+        if torch.isnan(predictions).any():
+            self.logger.error("NaN values detected in model predictions.")
+
         return predictions
+    
+    import time  # Add this at the top of the file
 
-    def train_model(self, optimizer, criterion, num_epochs, dataloader, save_model):
-        self.logger.info(f"Start training transformer model")
-        start = time.time()
-
+    def train_model(self, dataloader, optimizer, criterion, num_epochs, save_model, logger=None):
+        start = time.time()  # Record the start time
+        
         for epoch in range(num_epochs):
             self.train()
             epoch_loss = 0
 
-            # fmt: off
             for i, (_neighborhood_ids, _time_features, _building_type_ids, _building_counts,
                     _population, _event_type_ids, _equipment_ids, _targets) in enumerate(dataloader):
                 optimizer.zero_grad()
 
                 # Forward pass
-                _predictions = self(_neighborhood_ids, _time_features, _building_type_ids,
+                predictions = self(_neighborhood_ids, _time_features, _building_type_ids,
                                     _building_counts, _population, _event_type_ids, _equipment_ids)
 
-                # # If _targets is 1D, expand it
-                # if _targets.dim() == 1:
-                #     _targets = _targets.unsqueeze(1).expand(-1, _predictions.size(1))
+                # Align targets with predictions
+                if _targets.dim() == 3:  # If _targets has an extra dimension
+                    _targets = _targets.squeeze(-1)  # Remove the last dimension
 
-                # Option 2: Aggregate _predictions to match _targets
-                _pred_agg = _predictions.sum(dim=1)
+                # Check for NaN values
+                if torch.isnan(predictions).any():
+                    logger.error("NaN detected in predictions during training.")
+                    predictions = torch.nan_to_num(predictions, nan=0.0)  # Replace NaN with 0
+
+                if torch.isnan(_targets).any():
+                    logger.error("NaN detected in targets during training.")
+                    _targets = torch.nan_to_num(_targets, nan=0.0)  # Replace NaN with 0
 
                 # Compute loss
-                #loss = criterion(_predictions, _targets)
-                # Use _pred_agg for loss computation if Option 2 is chosen
-                loss = criterion(_pred_agg, _targets)
-
-                #self.logger.info(f"_predictions shape: {_predictions.shape}, _targets shape: {_targets.shape}")
+                loss = criterion(predictions, _targets)
 
                 # Backward pass and optimization
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
                 optimizer.step()
+
+                # Accumulate loss
+                #epoch_loss += loss.item()
 
                 mini_batch_loss = loss.item()
                 epoch_loss += mini_batch_loss
@@ -135,87 +162,68 @@ class ST_TEM(nn.Module):
                     f"Epoch [{epoch+1}/{num_epochs}] completed, Average Loss: {(epoch_loss / len(dataloader)):.4f}"
                 )
 
-        self.logger.info(f"Training loop finished")
-
+        self.logger.info(f"Training loop finished")    
+        
         if save_model:
             torch.save(self.state_dict(), "transformer_model_weekly.pth")
             self.logger.info("Model saved successfully.")
-
-        end = time.time()
-        self.logger.info(f"Finish training transformer model, time elapsed {(end-start):.2f}s")
-        return
+            
+        end = time.time()  # Record the end time
+        self.logger.info(f"Finish training transformer model, time elapsed {(end - start):.2f}s")
 
     def validate_model(self, dataloader):
+        """
+        Validate the model and calculate evaluation metrics.
+
+        Args:
+            dataloader (DataLoader): Validation DataLoader.
+
+        Returns:
+            tuple: All predictions and all targets.
+        """
         self.eval()
-        all_predictions, all_targets = [], []
-
-        with torch.no_grad():
-            for _neighborhood_ids, _time_features, _building_type_ids, _building_counts, _population, _event_type_ids, _equipment_ids, _targets in dataloader:
-                _predictions = self(_neighborhood_ids, _time_features, _building_type_ids, _building_counts, _population, _event_type_ids, _equipment_ids)
-
-                # Replace NaN values with 0 or exclude them
-                #_predictions = torch.nan_to_num(_predictions, nan=0.0)
-                #_targets = torch.nan_to_num(_targets, nan=0.0)
-                print(f"Prediction: {_predictions}")
-                print(f"Targets: {_targets}")
-
-                all_predictions.append(_predictions)
-                all_targets.append(_targets)
-
-        all_predictions = torch.cat(all_predictions).squeeze(-1)
-        all_targets = torch.cat(all_targets).squeeze(-1)
-
-        # Calculate metrics
-        mae = mean_absolute_error(all_targets.numpy(), all_predictions.numpy())
-        mse = mean_squared_error(all_targets.numpy(), all_predictions.numpy())
-        print(f"MAE: {mae}, MSE: {mse}")
-
-        return all_predictions, all_targets
-
-
-    """
-    def validate_model(self, dataloader):
-        self.logger.info(f"Start evaluating transformer model")
-        start = time.time()
-
-        self.eval()  # Set model to evaluation mode
         all_predictions = []
         all_targets = []
 
-        with torch.no_grad():  # Disable gradient computation
-            # fmt: off
-            for i, (_neighborhood_ids, _time_features, _building_type_ids, _building_counts,
-                _population, _event_type_ids, _equipment_ids, _targets) in enumerate(dataloader):
-                
+        with torch.no_grad():
+            for batch in dataloader:
+                # Extract features and targets from batch
+                _neighborhood_ids, _time_features, _building_type_ids, _building_counts, _population, _event_type_ids, _equipment_ids, _targets = batch
+
                 # Forward pass
-                _predictions = self(_neighborhood_ids, _time_features, _building_type_ids,
-                                    _building_counts, _population, _event_type_ids, _equipment_ids)
+                predictions = self(_neighborhood_ids, _time_features, _building_type_ids, _building_counts, _population, _event_type_ids, _equipment_ids)
 
-                # Collect predictions and true values
-                all_predictions.append(_predictions.cpu().numpy())
-                all_targets.append(_targets.cpu().numpy())
-            # fmt: on
+                # Collect predictions and targets
+                all_predictions.append(predictions.cpu())
+                all_targets.append(_targets.cpu())
 
-        # Combine all batches
-        all_predictions = np.concatenate(all_predictions, axis=0)
-        all_targets = np.concatenate(all_targets, axis=0)
+        # Concatenate all batches
+        all_predictions = torch.cat(all_predictions, dim=0).squeeze(-1)  # Flatten to [num_samples]
+        all_targets = torch.cat(all_targets, dim=0).squeeze(-1)  # Flatten to [num_samples]
 
-        # Compute metrics
-        mae = mean_absolute_error(all_targets, all_predictions)
-        mse = mean_squared_error(all_targets, all_predictions)
-        rmse = np.sqrt(mse)
-        r2 = r2_score(all_targets, all_predictions)
+        # Convert to NumPy for sklearn metrics
+        all_predictions_np = all_predictions.numpy()
+        all_targets_np = all_targets.numpy()
 
-        self.logger.info(f"Validation Results: MAE: {mae:.4f}, MSE: {mse:.4f}, RMSE: {rmse:.4f}, R² Score: {r2:.4f}")
-        self.logger.info(f"Target shape {all_targets.shape}, Prediction shape {all_predictions.shape}")
-        self.logger.info(f"Last predictions {_predictions}")
+        # Calculate metrics
+        mae = mean_absolute_error(all_targets_np, all_predictions_np)
+        mse = mean_squared_error(all_targets_np, all_predictions_np)
+        self.logger.info(f"MAE: {mae}, MSE: {mse}")
 
-        end = time.time()
-        self.logger.info(f"Finish training transformer model, time elapsed {(end-start):.2f}s")
-
-        return all_predictions, all_targets
-    """
-        
+        return all_predictions_np, all_targets_np
+    
+    def initialize_weights(self):
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight)
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
+            elif isinstance(module, nn.Embedding):
+                nn.init.normal_(module.weight, mean=0, std=0.1)
+            elif isinstance(module, nn.LayerNorm):
+                nn.init.constant_(module.bias, 0)
+                nn.init.constant_(module.weight, 1.0)
+                
     def plot_result(self, predictions, targets, figure_path):
         # # Figure 1: predicted weekly events in neighbourhood heat map
         # fig1 = plt.figure(figsize=(12, 100))
@@ -245,18 +253,79 @@ class ST_TEM(nn.Module):
         # fig2.savefig(os.path.join(figure_path, "2-predicted-vs-target.png", dpi=fig1.dpi))
 
         # Figure 3
-        fig3 = plt.figure(figsize=(30, 5))
-        x = np.arange(len(predictions))  # Positions for the first list
-        width = 0.4  # Width of the bars
-        plt.bar(x - width / 2, predictions, width=width, label="predictions", color="skyblue")
-        plt.bar(x + width / 2, targets, width=width, label="targets", color="orange")
-        plt.xlabel("Index")
-        plt.ylabel("Values")
-        plt.title("Side-by-Side Bar Plot of Two Lists")
-        plt.xticks(x, [f"Item {i}" for i in range(len(predictions))])  # Label x-axis ticks
+        # fig3 = plt.figure(figsize=(30, 5))
+        # x = np.arange(len(predictions))  # Positions for the first list
+        # width = 0.4  # Width of the bars
+        # plt.bar(x - width / 2, predictions, width=width, label="predictions", color="skyblue")
+        # plt.bar(x + width / 2, targets, width=width, label="targets", color="orange")
+        # plt.xlabel("Index")
+        # plt.ylabel("Values")
+        # plt.title("Side-by-Side Bar Plot of Two Lists")
+        # plt.xticks(x, [f"Item {i}" for i in range(len(predictions))])  # Label x-axis ticks
+        # plt.legend()
+        # plt.tight_layout()
+        # fig3.savefig(os.path.join(figure_path, "3-side-by-side.png", dpi=fig1.dpi))
+        
+        # Figure 4 - Aggregate Predictions Across Neighborhoods
+        # Aggregate across neighborhoods
+        aggregated_predictions = predictions.mean(axis=1)  # Shape: [125]
+        aggregated_targets = targets.mean(axis=1)          # Shape: [125]
+
+        # Generate x-axis values
+        x = np.arange(aggregated_predictions.shape[0])  # Shape: [125]
+
+        # Plot
+        width = 0.35
+        plt.bar(x - width / 2, aggregated_predictions, width=width, label="Predictions", color="skyblue")
+        plt.bar(x + width / 2, aggregated_targets, width=width, label="Targets", color="orange")
+        plt.xlabel("Time Steps")
+        plt.ylabel("Number of Events")
+        plt.title("Predicted vs Actual Events (Aggregated Across Neighborhoods)")
         plt.legend()
+        plt.show()
+
+        
+        # Figure 5 - Plot Predictions for Individual Neighborhoods
+        # Select a specific neighborhood (e.g., the first one)
+        neighborhood_idx = 0
+        single_neighborhood_predictions = predictions[:, neighborhood_idx]  # Shape: [125]
+        single_neighborhood_targets = targets[:, neighborhood_idx]          # Shape: [125]
+
+        # Generate x-axis values
+        x = np.arange(single_neighborhood_predictions.shape[0])  # Shape: [125]
+
+        # Plot
+        width = 0.35
+        plt.bar(x - width / 2, single_neighborhood_predictions, width=width, label="Predictions", color="skyblue")
+        plt.bar(x + width / 2, single_neighborhood_targets, width=width, label="Targets", color="orange")
+        plt.xlabel("Time Steps")
+        plt.ylabel("Number of Events")
+        plt.title(f"Predicted vs Actual Events for Neighborhood {neighborhood_idx}")
+        plt.legend()
+        plt.show()
+
+        # Figure 6 - Plot Multiple Neighborhoods Using Subplots
+        # Number of neighborhoods to plot
+        num_neighborhoods_to_plot = 5
+
+        # Create subplots
+        fig, axes = plt.subplots(num_neighborhoods_to_plot, 1, figsize=(10, num_neighborhoods_to_plot * 3), sharex=True)
+
+        for i in range(num_neighborhoods_to_plot):
+            neighborhood_predictions = predictions[:, i]
+            neighborhood_targets = targets[:, i]
+            x = np.arange(neighborhood_predictions.shape[0])
+
+            axes[i].bar(x - width / 2, neighborhood_predictions, width=width, label="Predictions", color="skyblue")
+            axes[i].bar(x + width / 2, neighborhood_targets, width=width, label="Targets", color="orange")
+            axes[i].set_title(f"Neighborhood {i}")
+            axes[i].set_ylabel("Number of Events")
+            axes[i].legend()
+
+        axes[-1].set_xlabel("Time Steps")
         plt.tight_layout()
-        fig3.savefig(os.path.join(figure_path, "3-side-by-side.png", dpi=fig1.dpi))
+        plt.show()
+
 
         return
     

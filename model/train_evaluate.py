@@ -13,6 +13,7 @@ import torch
 import pandas as pd
 import numpy as np
 import torch.nn as nn
+import torch.nn.init
 
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
@@ -286,8 +287,22 @@ for batch in train_dataloader:
     print("Input batch:", batch)
     break
 
+logger.debug("Checking for NaNs in input features...")
+for feature_name, feature_tensor in [
+    ("neighborhood_ids", neighborhood_ids),
+    ("time_features", time_features),
+    ("building_type_ids", building_type_ids),
+    ("building_counts", building_counts),
+    ("population", population),
+    ("event_type_ids", event_type_ids),
+    ("equipment_ids", equipment_ids),
+]:
+    if torch.isnan(feature_tensor).any():
+        logger.error(f"NaN detected in {feature_name}")
+
 # Transformer Model
 transformer = ST_TEM(embedding_module=embedding_module, embed_dim=64, num_heads=4, num_layers=2)
+transformer.initialize_weights()
 optimizer = torch.optim.Adam(transformer.parameters(), lr=0.001)
 criterion = nn.PoissonNLLLoss()
 num_epochs = 5
