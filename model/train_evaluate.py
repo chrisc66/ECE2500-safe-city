@@ -87,7 +87,7 @@ weekly_nbhd_events = (
 )
 unique_year_week = weekly_nbhd_events[["year", "week"]].drop_duplicates().to_numpy()
 
-spatial_dimension = len(neighborhood_number_list)  # spatial_dimension = num_neighbourhood
+spatial_dimension = len(neighborhood_number_list)
 temporal_dimension = len(unique_year_week)
 num_income = len(income_list)
 num_building_types = len(build_type_list)
@@ -104,9 +104,10 @@ event_type_embed_dim = 16
 equipment_embed_dim = 16
 target_embed_dim = 64
 
-mini_batch_size = 29
-batch_size = 13
-assert spatial_dimension == batch_size * mini_batch_size
+# 623 = 7 * 89
+mini_batch_size = 89
+batch_size = 7
+assert temporal_dimension == batch_size * mini_batch_size
 
 #################################################
 # Create Features and Targets
@@ -300,7 +301,7 @@ transformer = ST_TEM(embedding_module=embedding_module, embed_dim=64, num_heads=
 transformer.initialize_weights()
 optimizer = torch.optim.Adam(transformer.parameters(), lr=0.001)
 criterion = nn.PoissonNLLLoss()
-num_epochs = 5
+num_epochs = 1
 
 #################################################
 # Train and Validate Model
@@ -313,4 +314,8 @@ transformer.train_model(
     save_model=False,
 )
 all_predictions, all_targets = transformer.validate_model(dataloader=val_dataloader)
+
+logger.info(f"all_predictions {all_predictions.shape}")
+logger.info(f"all_targets {all_targets.shape}")
+
 transformer.plot_result(predictions=all_predictions, targets=all_targets, figure_path=FIGURE_PATH)

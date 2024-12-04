@@ -95,16 +95,20 @@ class ST_TEM(nn.Module):
             self.train()
             epoch_loss = 0
 
-            for i, (
-                _neighborhood_ids,
-                _time_features,
-                _building_type_ids,
-                _building_counts,
-                _population,
-                _event_type_ids,
-                _equipment_ids,
-                _targets,
-            ) in enumerate(dataloader):
+            for i, mini_batch in enumerate(dataloader):
+                (
+                    _neighborhood_ids,
+                    _time_features,
+                    _building_type_ids,
+                    _building_counts,
+                    _population,
+                    _event_type_ids,
+                    _equipment_ids,
+                    _targets,
+                ) = mini_batch
+
+                self.logger.warning(f"_targets {_targets.shape}")
+
                 optimizer.zero_grad()
 
                 # Forward pass
@@ -178,8 +182,7 @@ class ST_TEM(nn.Module):
         all_targets = []
 
         with torch.no_grad():
-            for batch in dataloader:
-                # Extract features and targets from batch
+            for mini_batch in dataloader:
                 (
                     _neighborhood_ids,
                     _time_features,
@@ -189,7 +192,7 @@ class ST_TEM(nn.Module):
                     _event_type_ids,
                     _equipment_ids,
                     _targets,
-                ) = batch
+                ) = mini_batch
 
                 # Forward pass
                 predictions = self(
