@@ -165,35 +165,35 @@ class CombinedEmbedding(nn.Module):
     ):
         # Generate embeddings
         spatial_embeddings = self.node2vec_emb_layer(neighborhood_ids.long()).squeeze(2)
-        self.logger.info(f"Spatial Embedding Shape: {spatial_embeddings.shape}")
+        self.logger.debug(f"Spatial Embedding Shape: {spatial_embeddings.shape}")
 
         temporal_embeddings = self.time2vec(time_features)
-        self.logger.info(f"Temporal Embedding Shape: {temporal_embeddings.shape}")
+        self.logger.debug(f"Temporal Embedding Shape: {temporal_embeddings.shape}")
 
         # Building embeddings
         building_type_embeds = self.building_type_embedding(building_type_ids.long())
         building_type_embeds = building_type_embeds[:, :, 0, :]
-        self.logger.info(f"Building Type Embeds Shape: {building_type_embeds.shape}")
+        self.logger.debug(f"Building Type Embeds Shape: {building_type_embeds.shape}")
 
         # Adjust building_counts to match building_type_embed_dim
         building_counts = building_counts.unsqueeze(-1)
         building_counts = building_counts.repeat(1, 1, 1, self.building_type_embedding.embedding_dim)
         building_counts = building_counts[:, :, 0, :]
-        self.logger.info(f"Building Counts Shape after adjustment: {building_counts.shape}")
+        self.logger.debug(f"Building Counts Shape after adjustment: {building_counts.shape}")
 
         # Multiply and aggregate
         building_embeddings = (building_type_embeds.unsqueeze(1) * building_counts).sum(dim=1)
-        self.logger.info(f"Building Embedding Shape: {building_embeddings.shape}")
+        self.logger.debug(f"Building Embedding Shape: {building_embeddings.shape}")
 
         population = population.unsqueeze(-1)
         population_embeddings = self.population_embedding(population).squeeze(2)
-        self.logger.info(f"Population Embedding Shape: {population_embeddings.shape}")
+        self.logger.debug(f"Population Embedding Shape: {population_embeddings.shape}")
 
         event_type_embeddings = self.event_type_embedding(event_type_ids).squeeze(2)
-        self.logger.info(f"Event Type Embedding Shape: {event_type_embeddings.shape}")
+        self.logger.debug(f"Event Type Embedding Shape: {event_type_embeddings.shape}")
 
         equipment_embeddings = self.equipment_embedding(equipment_ids).squeeze(2)
-        self.logger.info(f"Equipment Embedding Shape: {equipment_embeddings.shape}")
+        self.logger.debug(f"Equipment Embedding Shape: {equipment_embeddings.shape}")
 
         combined_embedding = torch.cat(
             [
@@ -206,9 +206,9 @@ class CombinedEmbedding(nn.Module):
             ],
             dim=-1,
         )
-        self.logger.info(f"Combined Embedding Shape before projection: {combined_embedding.shape}")
+        self.logger.debug(f"Combined Embedding Shape before projection: {combined_embedding.shape}")
 
         combined_embedding = self.projection_layer(combined_embedding)
-        self.logger.info(f"Combined Embedding Shape after projection: {combined_embedding.shape}")
+        self.logger.debug(f"Combined Embedding Shape after projection: {combined_embedding.shape}")
 
         return combined_embedding

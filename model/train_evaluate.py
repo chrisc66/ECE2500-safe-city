@@ -21,13 +21,13 @@ from transformer import PositionalEncoding, ST_TEM
 from embeddings import Time2Vec, NeighborhoodDataset, CombinedEmbedding, generate_node2vec_embeddings
 
 
-DATASET_PATH = "../dataset/EdmontonFireRescueServicesData"
+DATASET_PATH = os.path.join("..", "dataset", "EdmontonFireRescueServicesData")
 UNIT_TRIP_PATH = os.path.join(DATASET_PATH, "EFRS_Unit_Trip_Summary.csv")
 WEEKLY_EVENTS_FILTER_PATH = os.path.join(DATASET_PATH, "weekly_events_filter.csv")
 NEIGHBOURHOOD_PATH = os.path.join(DATASET_PATH, "City_of_Edmonton_-_Neighbourhoods_20241022.csv")
 NEIGHBOURHOOD_FEATURES_PATH = os.path.join(DATASET_PATH, "neighbourhood_features.csv")
 
-TENSOR_PATH = "../tensors"
+TENSOR_PATH = os.path.join("..", "tensors")
 if not os.path.exists(TENSOR_PATH):
     os.mkdir(TENSOR_PATH)
 NBHD_IDS_TENSOR = os.path.join(TENSOR_PATH, "neighborhood_ids.pt")
@@ -40,7 +40,7 @@ EVENT_TYPE_IDS_TENSOR = os.path.join(TENSOR_PATH, "event_type_ids.pt")
 EQUIPMENT_IDS_TENSOR = os.path.join(TENSOR_PATH, "equipment_ids.pt")
 TARGETS_TENSOR = os.path.join(TENSOR_PATH, "targets.pt")
 
-FIGURE_PATH = "../figures"
+FIGURE_PATH = os.path.join("..", "figures")
 if not os.path.exists(FIGURE_PATH):
     os.mkdir(FIGURE_PATH)
 
@@ -208,7 +208,7 @@ else:
                 & (weekly_nbhd_events["week"] == week)
                 & (weekly_nbhd_events["Neighbourhood Number"] == nid)
             ]["event_count"].sum()
-            building_type_ids[t, s, 0] = torch.tensor(event_cnt, dtype=torch.int32)
+            targets[t, s, 0] = torch.tensor(event_cnt, dtype=torch.int32)
     torch.save(targets, TARGETS_TENSOR)
 logger.info(f"targets shape {targets.shape}")
 
@@ -282,11 +282,15 @@ train_dataset = NeighborhoodDataset(
 val_dataloader = DataLoader(val_dataset, batch_size=mini_batch_size, shuffle=False)
 train_dataloader = DataLoader(train_dataset, batch_size=mini_batch_size, shuffle=False)
 
+for batch in train_dataloader:
+    print("Input batch:", batch)
+    break
+
 # Transformer Model
 transformer = ST_TEM(embedding_module=embedding_module, embed_dim=64, num_heads=4, num_layers=2)
 optimizer = torch.optim.Adam(transformer.parameters(), lr=0.001)
 criterion = nn.PoissonNLLLoss()
-num_epochs = 500
+num_epochs = 5
 
 #################################################
 # Train and Validate Model

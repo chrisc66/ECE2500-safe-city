@@ -27,8 +27,6 @@ class PositionalEncoding(nn.Module):
         self.pe = pe.unsqueeze(0)
 
     def forward(self, x):
-        self.logger.info(f"PositionalEncoding forward x {x.shape}")
-        self.logger.info(f"PositionalEncoding forward pe {self.pe.shape}")
         x = x + self.pe[:, : x.size(1), :].to(x.device)
         return x
 
@@ -78,8 +76,11 @@ class ST_TEM(nn.Module):
 
         # Prediction layer (we apply it to each element in the sequence)
         # Albert: predictions = self.fc_out(x).squeeze(-1)  # Shape: [batch_size]
-        predictions = self.fc_out(x.squeeze(1)).squeeze(-1)  # Shape: [batch_size]
+        self.logger.info(f"Shape of x {x.shape}")
 
+        predictions = self.fc_out(x.squeeze(0)).squeeze(-1)  # Shape: [batch_size]
+        self.logger.info(f"Prediction of x {predictions.shape}")
+        
         return predictions
 
     def train_model(self, optimizer, criterion, num_epochs, dataloader, save_model):
@@ -99,8 +100,19 @@ class ST_TEM(nn.Module):
                 _predictions = self(_neighborhood_ids, _time_features, _building_type_ids,
                                     _building_counts, _population, _event_type_ids, _equipment_ids)
 
+                # # If _targets is 1D, expand it
+                # if _targets.dim() == 1:
+                #     _targets = _targets.unsqueeze(1).expand(-1, _predictions.size(1))
+
+                # Option 2: Aggregate _predictions to match _targets
+                _pred_agg = _predictions.sum(dim=1)
+
                 # Compute loss
-                loss = criterion(_predictions, _targets)
+                #loss = criterion(_predictions, _targets)
+                # Use _pred_agg for loss computation if Option 2 is chosen
+                loss = criterion(_pred_agg, _targets)
+
+                #self.logger.info(f"_predictions shape: {_predictions.shape}, _targets shape: {_targets.shape}")
 
                 # Backward pass and optimization
                 loss.backward()
@@ -119,7 +131,7 @@ class ST_TEM(nn.Module):
                     f"Epoch [{epoch+1}/{num_epochs}] completed, Average Loss: {(epoch_loss / len(dataloader)):.4f}"
                 )
             else:
-                self.logger.debug(
+                self.logger.info(
                     f"Epoch [{epoch+1}/{num_epochs}] completed, Average Loss: {(epoch_loss / len(dataloader)):.4f}"
                 )
 
@@ -133,6 +145,35 @@ class ST_TEM(nn.Module):
         self.logger.info(f"Finish training transformer model, time elapsed {(end-start):.2f}s")
         return
 
+    def validate_model(self, dataloader):
+        self.eval()
+        all_predictions, all_targets = [], []
+
+        with torch.no_grad():
+            for _neighborhood_ids, _time_features, _building_type_ids, _building_counts, _population, _event_type_ids, _equipment_ids, _targets in dataloader:
+                _predictions = self(_neighborhood_ids, _time_features, _building_type_ids, _building_counts, _population, _event_type_ids, _equipment_ids)
+
+                # Replace NaN values with 0 or exclude them
+                #_predictions = torch.nan_to_num(_predictions, nan=0.0)
+                #_targets = torch.nan_to_num(_targets, nan=0.0)
+                print(f"Prediction: {_predictions}")
+                print(f"Targets: {_targets}")
+
+                all_predictions.append(_predictions)
+                all_targets.append(_targets)
+
+        all_predictions = torch.cat(all_predictions).squeeze(-1)
+        all_targets = torch.cat(all_targets).squeeze(-1)
+
+        # Calculate metrics
+        mae = mean_absolute_error(all_targets.numpy(), all_predictions.numpy())
+        mse = mean_squared_error(all_targets.numpy(), all_predictions.numpy())
+        print(f"MAE: {mae}, MSE: {mse}")
+
+        return all_predictions, all_targets
+
+
+    """
     def validate_model(self, dataloader):
         self.logger.info(f"Start evaluating transformer model")
         start = time.time()
@@ -173,34 +214,35 @@ class ST_TEM(nn.Module):
         self.logger.info(f"Finish training transformer model, time elapsed {(end-start):.2f}s")
 
         return all_predictions, all_targets
-
+    """
+        
     def plot_result(self, predictions, targets, figure_path):
-        # Figure 1: predicted weekly events in neighbourhood heat map
-        fig1 = plt.figure(figsize=(12, 100))
-        predictions_np = predictions.reshape(-1, 1)  # shape (377, 1)
-        sns.heatmap(
-            predictions_np,
-            annot=True,
-            cmap="coolwarm",
-            cbar=True,
-            fmt=".2f",
-            xticklabels=[f"Week {i+1}" for i in range(predictions_np.shape[1])],
-            yticklabels=[f"Neighborhood {i+1}" for i in range(predictions_np.shape[0])],
-        )
-        plt.title("Predicted Number of Events per Day for Each Neighborhood")
-        plt.xlabel("Day of the Week")
-        plt.ylabel("Neighborhood")
-        fig1.savefig(os.path.join(figure_path, "1-heat-map.png", dpi=fig1.dpi))
+        # # Figure 1: predicted weekly events in neighbourhood heat map
+        # fig1 = plt.figure(figsize=(12, 100))
+        # predictions_np = predictions.reshape(-1, 1)  # shape (377, 1)
+        # sns.heatmap(
+        #     predictions_np,
+        #     annot=True,
+        #     cmap="coolwarm",
+        #     cbar=True,
+        #     fmt=".2f",
+        #     xticklabels=[f"Week {i+1}" for i in range(predictions_np.shape[1])],
+        #     yticklabels=[f"Neighborhood {i+1}" for i in range(predictions_np.shape[0])],
+        # )
+        # plt.title("Predicted Number of Events per Day for Each Neighborhood")
+        # plt.xlabel("Day of the Week")
+        # plt.ylabel("Neighborhood")
+        # fig1.savefig(os.path.join(figure_path, "1-heat-map.png", dpi=fig1.dpi))
 
-        # Figure 2
-        fig2 = plt.figure(figsize=(8, 8))
-        plt.scatter(targets, predictions, alpha=0.5, edgecolor="k")
-        plt.plot([targets.min(), targets.max()], [targets.min(), targets.max()], "r--")
-        plt.title("Predicted vs True Event Counts")
-        plt.xlabel("True Event Counts")
-        plt.ylabel("Predicted Event Counts")
-        plt.grid()
-        fig2.savefig(os.path.join(figure_path, "2-predicted-vs-target.png", dpi=fig1.dpi))
+        # # Figure 2
+        # fig2 = plt.figure(figsize=(8, 8))
+        # plt.scatter(targets, predictions, alpha=0.5, edgecolor="k")
+        # plt.plot([targets.min(), targets.max()], [targets.min(), targets.max()], "r--")
+        # plt.title("Predicted vs True Event Counts")
+        # plt.xlabel("True Event Counts")
+        # plt.ylabel("Predicted Event Counts")
+        # plt.grid()
+        # fig2.savefig(os.path.join(figure_path, "2-predicted-vs-target.png", dpi=fig1.dpi))
 
         # Figure 3
         fig3 = plt.figure(figsize=(30, 5))
@@ -217,3 +259,4 @@ class ST_TEM(nn.Module):
         fig3.savefig(os.path.join(figure_path, "3-side-by-side.png", dpi=fig1.dpi))
 
         return
+    
