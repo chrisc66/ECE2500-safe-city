@@ -107,8 +107,6 @@ class ST_TEM(nn.Module):
                     _targets,
                 ) = mini_batch
 
-                self.logger.warning(f"_targets {_targets.shape}")
-
                 optimizer.zero_grad()
 
                 # Forward pass
@@ -241,7 +239,7 @@ class ST_TEM(nn.Module):
 
         # Figure 1: predicted weekly events in neighbourhood heat map
         fig1 = plt.figure(figsize=(12, 100))
-        predictions_np = predictions.reshape(-1, 1)  # shape (377, 1)
+        predictions_np = predictions[0, :].reshape(-1, 1)  # shape (377, 1)
         sns.heatmap(
             predictions_np,
             annot=True,
@@ -256,31 +254,7 @@ class ST_TEM(nn.Module):
         plt.ylabel("Neighborhood")
         fig1.savefig(os.path.join(figure_path, "1-heat-map.png"), dpi=fig1.dpi)
 
-        # # Figure 2
-        # fig2 = plt.figure(figsize=(8, 8))
-        # plt.scatter(targets, predictions, alpha=0.5, edgecolor="k")
-        # plt.plot([targets.min(), targets.max()], [targets.min(), targets.max()], "r--")
-        # plt.title("Predicted vs True Event Counts")
-        # plt.xlabel("True Event Counts")
-        # plt.ylabel("Predicted Event Counts")
-        # plt.grid()
-        # fig2.savefig(os.path.join(figure_path, "2-predicted-vs-target.png"), dpi=fig1.dpi)
-
-        # # Figure 3
-        # fig3 = plt.figure(figsize=(30, 5))
-        # x = np.arange(len(predictions))  # Positions for the first list
-        # width = 0.4  # Width of the bars
-        # plt.bar(x - width / 2, predictions, width=width, label="predictions", color="skyblue")
-        # plt.bar(x + width / 2, targets, width=width, label="targets", color="orange")
-        # plt.xlabel("Index")
-        # plt.ylabel("Values")
-        # plt.title("Side-by-Side Bar Plot of Two Lists")
-        # plt.xticks(x, [f"Item {i}" for i in range(len(predictions))])  # Label x-axis ticks
-        # plt.legend()
-        # plt.tight_layout()
-        # fig3.savefig(os.path.join(figure_path, "3-side-by-side.png"), dpi=fig1.dpi)
-
-        # Figure 4 - Aggregate Predictions Across Neighborhoods
+        # Figure 2 - Aggregate Predictions Across Neighborhoods
         # Aggregate across neighborhoods
         aggregated_predictions = predictions.mean(axis=1)  # Shape: [125]
         aggregated_targets = targets.mean(axis=1)  # Shape: [125]
@@ -289,7 +263,7 @@ class ST_TEM(nn.Module):
         x = np.arange(aggregated_predictions.shape[0])  # Shape: [125]
 
         # Plot
-        fig4 = plt.figure(figsize=(10, 10))
+        fig2 = plt.figure(figsize=(10, 10))
         width = 0.35
         plt.bar(x - width / 2, aggregated_predictions, width=width, label="Predictions", color="skyblue")
         plt.bar(x + width / 2, aggregated_targets, width=width, label="Targets", color="orange")
@@ -297,9 +271,9 @@ class ST_TEM(nn.Module):
         plt.ylabel("Number of Events")
         plt.title("Predicted vs Actual Events (Aggregated Across Neighborhoods)")
         plt.legend()
-        fig4.savefig(os.path.join(figure_path, "4-overall-predicted-vs-actual.png"), dpi=fig4.dpi)
+        fig2.savefig(os.path.join(figure_path, "2-overall-predicted-vs-actual.png"), dpi=fig2.dpi)
 
-        # Figure 5 - Plot Predictions for Individual Neighborhoods
+        # Figure 3 - Plot Predictions for Individual Neighborhoods
         # Select a specific neighborhood (e.g., the first one)
         neighborhood_idx = 0
         single_neighborhood_predictions = predictions[:, neighborhood_idx]  # Shape: [125]
@@ -309,7 +283,7 @@ class ST_TEM(nn.Module):
         x = np.arange(single_neighborhood_predictions.shape[0])  # Shape: [125]
 
         # Plot
-        fig5 = plt.figure(figsize=(10, 10))
+        fig3 = plt.figure(figsize=(10, 10))
         width = 0.35
         plt.bar(x - width / 2, single_neighborhood_predictions, width=width, label="Predictions", color="skyblue")
         plt.bar(x + width / 2, single_neighborhood_targets, width=width, label="Targets", color="orange")
@@ -317,15 +291,16 @@ class ST_TEM(nn.Module):
         plt.ylabel("Number of Events")
         plt.title(f"Predicted vs Actual Events for Neighborhood {neighborhood_idx}")
         plt.legend()
-        fig5.savefig(os.path.join(figure_path, "5-neighbourhood-predicted-vs-actual.png"), dpi=fig5.dpi)
+        fig3.savefig(os.path.join(figure_path, "3-neighbourhood-predicted-vs-actual.png"), dpi=fig3.dpi)
 
-        # Figure 6 - Plot Multiple Neighborhoods Using Subplots
+        # Figure 4 - Plot Multiple Neighborhoods Using Subplots
         # Number of neighborhoods to plot
         num_neighborhoods_to_plot = 5
 
         # Create subplots
-        fig6 = plt.figure(figsize=(20, 20))
-        fig, axes = plt.subplots(num_neighborhoods_to_plot, 1, figsize=(10, num_neighborhoods_to_plot * 3), sharex=True)
+        fig4, axes = plt.subplots(
+            num_neighborhoods_to_plot, 1, figsize=(10, num_neighborhoods_to_plot * 3), sharex=True
+        )
 
         for i in range(num_neighborhoods_to_plot):
             neighborhood_predictions = predictions[:, i]
@@ -340,7 +315,7 @@ class ST_TEM(nn.Module):
 
         axes[-1].set_xlabel("Time Steps")
         plt.tight_layout()
-        fig6.savefig(os.path.join(figure_path, "6-neighbourhood-events.png"), dpi=fig6.dpi)
+        fig4.savefig(os.path.join(figure_path, "4-neighbourhood-events.png"), dpi=fig4.dpi)
 
         end = time.time()
         self.logger.info(f"Finish plotting prediction result, time elapsed {(end - start):.2f}s")

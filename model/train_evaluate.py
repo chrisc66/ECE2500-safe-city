@@ -313,9 +313,9 @@ transformer.train_model(
     dataloader=train_dataloader,
     save_model=False,
 )
-all_predictions, all_targets = transformer.validate_model(dataloader=val_dataloader)
+all_val_predictions, all_val_targets = transformer.validate_model(dataloader=val_dataloader)
 
-logger.info(f"all_predictions {all_predictions.shape}")
-logger.info(f"all_targets {all_targets.shape}")
+logger.info(f"all_predictions {all_val_predictions.shape}")
+logger.info(f"all_targets {all_val_targets.shape}")
 
-transformer.plot_result(predictions=all_predictions, targets=all_targets, figure_path=FIGURE_PATH)
+transformer.plot_result(predictions=all_val_predictions, targets=all_val_targets, figure_path=FIGURE_PATH)
