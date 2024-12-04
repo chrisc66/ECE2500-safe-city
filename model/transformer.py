@@ -88,14 +88,24 @@ class ST_TEM(nn.Module):
 
         return predictions
 
-    def train_model(self, dataloader, optimizer, criterion, num_epochs, save_model, logger=None):
+    def train_model(self, train_dataloader, val_dataloader, optimizer, criterion, num_epochs, save_model, logger=None):
+        if self.logger is None:
+            raise ValueError("Logger not initialized. Please provide a logger.")
+
         start = time.time()  # Record the start time
+        
+        train_losses = []
+        val_losses = []
+        train_accuracies = []
+        val_accuracies = []
 
         for epoch in range(num_epochs):
             self.train()
             epoch_loss = 0
+            correct_train = 0  # Initialize here
+            total_train = 0
 
-            for i, mini_batch in enumerate(dataloader):
+            for i, mini_batch in enumerate(train_dataloader):
                 (
                     _neighborhood_ids,
                     _time_features,
@@ -124,14 +134,14 @@ class ST_TEM(nn.Module):
                 if _targets.dim() == 3:  # If _targets has an extra dimension
                     _targets = _targets.squeeze(-1)  # Remove the last dimension
 
-                # Check for NaN values
-                if torch.isnan(predictions).any():
-                    logger.error("NaN detected in predictions during training.")
-                    predictions = torch.nan_to_num(predictions, nan=0.0)  # Replace NaN with 0
+                # # Check for NaN values
+                # if torch.isnan(predictions).any():
+                #     logger.error("NaN detected in predictions during training.")
+                #     predictions = torch.nan_to_num(predictions, nan=0.0)  # Replace NaN with 0
 
-                if torch.isnan(_targets).any():
-                    logger.error("NaN detected in targets during training.")
-                    _targets = torch.nan_to_num(_targets, nan=0.0)  # Replace NaN with 0
+                # if torch.isnan(_targets).any():
+                #     logger.error("NaN detected in targets during training.")
+                #     _targets = torch.nan_to_num(_targets, nan=0.0)  # Replace NaN with 0
 
                 # Compute loss
                 loss = criterion(predictions, _targets)
@@ -141,21 +151,41 @@ class ST_TEM(nn.Module):
                 torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
                 optimizer.step()
 
+
+                # Update training metrics
                 mini_batch_loss = loss.item()
                 epoch_loss += mini_batch_loss
+                correct_train += ((predictions.round() == _targets).sum().item())
+                total_train += _targets.numel()
 
                 self.logger.debug(
-                    f"Epoch [{epoch+1}/{num_epochs}], Mini-batch [{i + 1}/{len(dataloader)}], Loss: {mini_batch_loss:.4f}"
+                    f"Epoch [{epoch+1}/{num_epochs}], Mini-batch [{i + 1}/{len(train_dataloader)}], Loss: {mini_batch_loss:.4f}"
                 )
             # fmt: on
 
+            # Average training loss and accuracy
+            avg_train_loss = epoch_loss / len(train_dataloader)
+            train_accuracy = correct_train / total_train
+            train_losses.append(avg_train_loss)
+            train_accuracies.append(train_accuracy)
+
+            # Validation Phase
+            val_loss, val_accuracy = self.evaluate(dataloader=val_dataloader, criterion=criterion)
+            val_losses.append(val_loss)
+            val_accuracies.append(val_accuracy)
+
+            self.logger.info(
+            f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss:.4f}, "
+            f"Train Acc: {train_accuracy:.4f}, Val Acc: {val_accuracy:.4f}"
+            )
+
             if epoch % 10 == 0:
                 self.logger.info(
-                    f"Epoch [{epoch+1}/{num_epochs}] completed, Average Loss: {(epoch_loss / len(dataloader)):.4f}"
+                    f"Epoch [{epoch+1}/{num_epochs}] completed, Average Loss: {(epoch_loss / len(train_dataloader)):.4f}"
                 )
             else:
                 self.logger.debug(
-                    f"Epoch [{epoch+1}/{num_epochs}] completed, Average Loss: {(epoch_loss / len(dataloader)):.4f}"
+                    f"Epoch [{epoch+1}/{num_epochs}] completed, Average Loss: {(epoch_loss / len(train_dataloader)):.4f}"
                 )
 
         if save_model:
@@ -163,6 +193,8 @@ class ST_TEM(nn.Module):
             self.logger.info("Model saved successfully.")
 
         end = time.time()  # Record the end time
+        # Plot losses and accuracies
+        self.plot_training_curves(train_losses, val_losses, train_accuracies, val_accuracies)
         self.logger.info(f"Finish training transformer model, time elapsed {(end - start):.2f}s")
 
     def validate_model(self, dataloader):
@@ -222,6 +254,51 @@ class ST_TEM(nn.Module):
 
         return all_predictions_np, all_targets_np
 
+    def evaluate(self, dataloader, criterion):
+        self.eval()
+        total_loss = 0
+        correct = 0
+        total = 0
+
+        with torch.no_grad():
+            for mini_batch in dataloader:
+                (
+                    _neighborhood_ids,
+                    _time_features,
+                    _building_type_ids,
+                    _building_counts,
+                    _population,
+                    _event_type_ids,
+                    _equipment_ids,
+                    _targets,
+                ) = mini_batch
+
+                predictions = self(
+                    _neighborhood_ids,
+                    _time_features,
+                    _building_type_ids,
+                    _building_counts,
+                    _population,
+                    _event_type_ids,
+                    _equipment_ids,
+                )
+
+                if _targets.dim() == 3:
+                    _targets = _targets.squeeze(-1)
+
+                # Compute loss
+                loss = criterion(predictions, _targets)
+                total_loss += loss.item()
+
+                # Calculate accuracy
+                correct += ((predictions.round() == _targets).sum().item())
+                total += _targets.numel()
+
+        avg_loss = total_loss / len(dataloader)
+        accuracy = correct / total
+
+        return avg_loss, accuracy
+
     def initialize_weights(self):
         for module in self.modules():
             if isinstance(module, nn.Linear):
@@ -233,6 +310,31 @@ class ST_TEM(nn.Module):
             elif isinstance(module, nn.LayerNorm):
                 nn.init.constant_(module.bias, 0)
                 nn.init.constant_(module.weight, 1.0)
+
+    def plot_training_curves(self, train_losses, val_losses, train_accuracies, val_accuracies):
+        # Plot Losses
+        plt.figure(figsize=(10, 5))
+        plt.plot(train_losses, label="Training Loss", color="blue")
+        plt.plot(val_losses, label="Validation Loss", color="orange")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.title("Training and Validation Loss")
+        plt.legend()
+        plt.grid(True)
+        plt.savefig("training_validation_loss.png")
+        plt.close()
+
+        # Plot Accuracies
+        plt.figure(figsize=(10, 5))
+        plt.plot(train_accuracies, label="Training Accuracy", color="green")
+        plt.plot(val_accuracies, label="Validation Accuracy", color="red")
+        plt.xlabel("Epoch")
+        plt.ylabel("Accuracy")
+        plt.title("Training and Validation Accuracy")
+        plt.legend()
+        plt.grid(True)
+        plt.savefig("training_validation_accuracy.png")
+        plt.close()
 
     def plot_result(self, predictions, targets, figure_path):
         start = time.time()

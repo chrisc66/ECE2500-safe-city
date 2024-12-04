@@ -301,7 +301,7 @@ transformer = ST_TEM(embedding_module=embedding_module, embed_dim=64, num_heads=
 transformer.initialize_weights()
 optimizer = torch.optim.Adam(transformer.parameters(), lr=0.001)
 criterion = nn.PoissonNLLLoss()
-num_epochs = 1
+num_epochs = 100
 
 #################################################
 # Train and Validate Model
@@ -310,7 +310,8 @@ transformer.train_model(
     optimizer=optimizer,
     criterion=criterion,
     num_epochs=num_epochs,
-    dataloader=train_dataloader,
+    train_dataloader=train_dataloader,
+    val_dataloader=val_dataloader,
     save_model=False,
 )
 all_val_predictions, all_val_targets = transformer.validate_model(dataloader=val_dataloader)
