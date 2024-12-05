@@ -316,7 +316,7 @@ transformer.train_model(
 )
 all_val_predictions, all_val_targets = transformer.validate_model(dataloader=val_dataloader)
 
-logger.info(f"all_predictions {all_val_predictions.shape}")
-logger.info(f"all_targets {all_val_targets.shape}")
+logger.debug(f"all_predictions {all_val_predictions.shape}")
+logger.debug(f"all_targets {all_val_targets.shape}")
 
 transformer.plot_result(predictions=all_val_predictions, targets=all_val_targets, figure_path=FIGURE_PATH)
