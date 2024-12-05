@@ -88,12 +88,11 @@ class ST_TEM(nn.Module):
 
         return predictions
 
-    def train_model(self, train_dataloader, val_dataloader, optimizer, criterion, num_epochs, save_model, logger=None):
-        if self.logger is None:
-            raise ValueError("Logger not initialized. Please provide a logger.")
+    def train_model(self, train_dataloader, val_dataloader, optimizer, criterion, num_epochs, save_model=False, debug=False):
 
+        self.logger.info(f"Start training transformer model")
         start = time.time()  # Record the start time
-        
+
         train_losses = []
         val_losses = []
         train_accuracies = []
@@ -134,14 +133,14 @@ class ST_TEM(nn.Module):
                 if _targets.dim() == 3:  # If _targets has an extra dimension
                     _targets = _targets.squeeze(-1)  # Remove the last dimension
 
-                # # Check for NaN values
-                # if torch.isnan(predictions).any():
-                #     logger.error("NaN detected in predictions during training.")
-                #     predictions = torch.nan_to_num(predictions, nan=0.0)  # Replace NaN with 0
+                # Check for NaN values
+                if torch.isnan(predictions).any():
+                    self.logger.error("NaN detected in predictions during training.")
+                    predictions = torch.nan_to_num(predictions, nan=0.0)  # Replace NaN with 0
 
-                # if torch.isnan(_targets).any():
-                #     logger.error("NaN detected in targets during training.")
-                #     _targets = torch.nan_to_num(_targets, nan=0.0)  # Replace NaN with 0
+                if torch.isnan(_targets).any():
+                    self.logger.error("NaN detected in targets during training.")
+                    _targets = torch.nan_to_num(_targets, nan=0.0)  # Replace NaN with 0
 
                 # Compute loss
                 loss = criterion(predictions, _targets)
@@ -151,11 +150,10 @@ class ST_TEM(nn.Module):
                 torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
                 optimizer.step()
 
-
                 # Update training metrics
                 mini_batch_loss = loss.item()
                 epoch_loss += mini_batch_loss
-                correct_train += ((predictions.round() == _targets).sum().item())
+                correct_train += (predictions.round() == _targets).sum().item()
                 total_train += _targets.numel()
 
                 self.logger.debug(
@@ -174,18 +172,15 @@ class ST_TEM(nn.Module):
             val_losses.append(val_loss)
             val_accuracies.append(val_accuracy)
 
-            self.logger.info(
-            f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss:.4f}, "
-            f"Train Acc: {train_accuracy:.4f}, Val Acc: {val_accuracy:.4f}"
-            )
-
-            if epoch % 10 == 0:
+            if epoch % 10 == 0 or debug:
                 self.logger.info(
-                    f"Epoch [{epoch+1}/{num_epochs}] completed, Average Loss: {(epoch_loss / len(train_dataloader)):.4f}"
+                    f"Epoch [{epoch+1}/{num_epochs}] Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss:.4f}, "
+                    f"Train Acc: {train_accuracy:.4f}, Val Acc: {val_accuracy:.4f}"
                 )
             else:
                 self.logger.debug(
-                    f"Epoch [{epoch+1}/{num_epochs}] completed, Average Loss: {(epoch_loss / len(train_dataloader)):.4f}"
+                    f"Epoch [{epoch+1}/{num_epochs}] Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss:.4f}, "
+                    f"Train Acc: {train_accuracy:.4f}, Val Acc: {val_accuracy:.4f}"
                 )
 
         if save_model:
@@ -193,9 +188,10 @@ class ST_TEM(nn.Module):
             self.logger.info("Model saved successfully.")
 
         end = time.time()  # Record the end time
+        self.logger.info(f"Finish training transformer model, time elapsed {(end - start):.2f}s")
+
         # Plot losses and accuracies
         self.plot_training_curves(train_losses, val_losses, train_accuracies, val_accuracies)
-        self.logger.info(f"Finish training transformer model, time elapsed {(end - start):.2f}s")
 
     def validate_model(self, dataloader):
         """
@@ -291,7 +287,7 @@ class ST_TEM(nn.Module):
                 total_loss += loss.item()
 
                 # Calculate accuracy
-                correct += ((predictions.round() == _targets).sum().item())
+                correct += (predictions.round() == _targets).sum().item()
                 total += _targets.numel()
 
         avg_loss = total_loss / len(dataloader)
