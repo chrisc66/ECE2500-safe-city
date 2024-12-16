@@ -79,7 +79,7 @@ class ST_TEM(nn.Module):
         # Apply ReLU to ensure non-negative predictions
         self.logger.debug(f"Model predictions before activation: {predictions}")
 
-        # predictions = torch.relu(predictions)
+        predictions = torch.relu(predictions)
         # self.logger.debug(f"Model predictions after activation: {predictions}")
 
         self.logger.debug(f"Predictions from forward pass: {predictions}")
